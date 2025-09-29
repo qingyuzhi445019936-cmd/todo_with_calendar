@@ -1,6 +1,6 @@
 [build]
   publish = "build"
-  command = "npm run build"
+  command = "npm ci --legacy-peer-deps && npm run build"
 
 [[redirects]]
   from = "/*"
@@ -9,3 +9,4 @@
 
 [build.environment]
   NODE_VERSION = "18"
+  NPM_FLAGS = "--legacy-peer-deps"
