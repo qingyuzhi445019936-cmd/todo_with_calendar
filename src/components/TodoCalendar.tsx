@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Calendar, momentLocalizer, Event } from 'react-big-calendar';
 import moment from 'moment';
-import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { ethers } from 'ethers';
 import { Todo } from './TodoApp';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from '../contracts/config';
 
+// Configure moment and localizer
+moment.locale('en');
 const localizer = momentLocalizer(moment);
 
 interface CalendarEvent extends Event {
@@ -16,6 +17,8 @@ const TodoCalendar: React.FC = () => {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreatingTodo, setIsCreatingTodo] = useState(false);
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentView, setCurrentView] = useState<'month' | 'week' | 'day' | 'agenda'>('month');
 
   // Get contract instance
   const getContract = async () => {
@@ -103,13 +106,29 @@ const TodoCalendar: React.FC = () => {
   }, []);
 
   const events: CalendarEvent[] = useMemo(() => {
-    return todos.map(todo => ({
-      id: todo.id,
-      title: todo.content,
-      start: new Date(todo.dueDate * 1000),
-      end: new Date(todo.dueDate * 1000),
-      resource: todo,
-    }));
+    console.log('📅 Calendar: Converting todos to events', todos);
+    return todos.map(todo => {
+      const startDate = new Date(todo.dueDate * 1000);
+      const endDate = new Date(todo.dueDate * 1000);
+
+      // Ensure the date is valid
+      if (isNaN(startDate.getTime())) {
+        console.warn('📅 Calendar: Invalid date for todo', todo);
+        return null;
+      }
+
+      const event = {
+        id: todo.id,
+        title: todo.content,
+        start: startDate,
+        end: endDate,
+        resource: todo,
+        allDay: true, // Make events all-day for better display
+      };
+
+      console.log('📅 Calendar: Created event', event);
+      return event;
+    }).filter(Boolean) as CalendarEvent[];
   }, [todos]);
 
   const eventStyleGetter = (event: CalendarEvent) => {
@@ -177,6 +196,16 @@ const TodoCalendar: React.FC = () => {
     }
   };
 
+  const handleNavigate = (newDate: Date) => {
+    console.log('📅 Calendar: Navigating to', newDate);
+    setCurrentDate(newDate);
+  };
+
+  const handleViewChange = (view: 'month' | 'week' | 'day' | 'agenda') => {
+    console.log('📅 Calendar: Changing view to', view);
+    setCurrentView(view);
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-sm border p-6">
       <div className="mb-6">
@@ -206,20 +235,32 @@ const TodoCalendar: React.FC = () => {
       </div>
 
       <div style={{ height: '600px' }}>
+        {events.length > 0 && (
+          <div className="mb-2 text-sm text-gray-600">
+            Displaying {events.length} todo(s) on calendar
+          </div>
+        )}
         <Calendar
           localizer={localizer}
           events={events}
           startAccessor="start"
           endAccessor="end"
+          titleAccessor="title"
+          allDayAccessor="allDay"
           style={{ height: '100%' }}
           eventPropGetter={eventStyleGetter}
           onSelectEvent={handleSelectEvent}
           onSelectSlot={handleSelectSlot}
-          selectable
-          views={['month', 'week', 'day']}
-          defaultView="month"
-          popup
-          showMultiDayTimes
+          onNavigate={handleNavigate}
+          date={currentDate}
+          view={currentView}
+          selectable={true}
+          views={['month', 'week', 'day', 'agenda']}
+          popup={true}
+          showMultiDayTimes={true}
+          step={60}
+          timeslots={1}
+          dayLayoutAlgorithm="no-overlap"
         />
       </div>
 

@@ -113,4 +113,74 @@ contract TodoList {
 
         return userTodoList;
     }
+
+    function bulkCreateTodos(string[] memory _contents, uint256[] memory _dueDates) public {
+        require(_contents.length == _dueDates.length, "Contents and due dates arrays must have the same length");
+        require(_contents.length > 0, "Arrays cannot be empty");
+
+        for (uint256 i = 0; i < _contents.length; i++) {
+            todoCount++;
+            todos[todoCount] = Todo(
+                todoCount,
+                _contents[i],
+                false,
+                _dueDates[i],
+                msg.sender,
+                block.timestamp
+            );
+
+            userTodos[msg.sender].push(todoCount);
+
+            emit TodoCreated(todoCount, _contents[i], _dueDates[i], msg.sender);
+        }
+    }
+
+    function bulkUpdateTodos(
+        uint256[] memory _ids,
+        string[] memory _contents,
+        bool[] memory _completed,
+        uint256[] memory _dueDates
+    ) public {
+        require(
+            _ids.length == _contents.length &&
+            _ids.length == _completed.length &&
+            _ids.length == _dueDates.length,
+            "All arrays must have the same length"
+        );
+        require(_ids.length > 0, "Arrays cannot be empty");
+
+        for (uint256 i = 0; i < _ids.length; i++) {
+            require(todos[_ids[i]].owner == msg.sender, "Not the owner of this todo");
+
+            Todo storage todo = todos[_ids[i]];
+            todo.content = _contents[i];
+            todo.completed = _completed[i];
+            todo.dueDate = _dueDates[i];
+
+            emit TodoUpdated(_ids[i], _contents[i], _completed[i], _dueDates[i]);
+        }
+    }
+
+    function bulkDeleteTodos(uint256[] memory _ids) public {
+        require(_ids.length > 0, "Array cannot be empty");
+
+        for (uint256 i = 0; i < _ids.length; i++) {
+            require(todos[_ids[i]].id != 0, "Todo does not exist");
+            require(todos[_ids[i]].owner == msg.sender, "Not the owner of this todo");
+
+            // Remove from user's todo list
+            uint256[] storage userTodoList = userTodos[msg.sender];
+            for (uint256 j = 0; j < userTodoList.length; j++) {
+                if (userTodoList[j] == _ids[i]) {
+                    userTodoList[j] = userTodoList[userTodoList.length - 1];
+                    userTodoList.pop();
+                    break;
+                }
+            }
+
+            delete todos[_ids[i]];
+
+            emit TodoDeleted(_ids[i], msg.sender);
+        }
+    }
 }

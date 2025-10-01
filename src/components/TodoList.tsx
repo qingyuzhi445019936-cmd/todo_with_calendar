@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { ethers } from 'ethers';
 import { Todo } from './TodoApp';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from '../contracts/config';
+import * as XLSX from 'xlsx';
 
 const TodoList: React.FC = () => {
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -13,6 +14,10 @@ const TodoList: React.FC = () => {
   const [isLoadingTodos, setIsLoadingTodos] = useState(false);
   const [deletingTodoId, setDeletingTodoId] = useState<number | null>(null);
   const [userAddress, setUserAddress] = useState<string>('');
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedTodos, setSelectedTodos] = useState<Set<number>>(new Set());
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   // Get contract instance
   const getContract = async () => {
@@ -355,6 +360,205 @@ const TodoList: React.FC = () => {
     return timestamp * 1000 < Date.now();
   };
 
+  const handleImportExcel = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      // Read the Excel file
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      // Parse the data (expecting columns: Content, Due Date)
+      const todoData: { content: string; dueDate: Date }[] = [];
+
+      for (let i = 1; i < jsonData.length; i++) { // Skip header row
+        const row = jsonData[i] as any[];
+        if (row[0] && row[0].toString().trim()) {
+          let dueDate = new Date();
+
+          // Try to parse the due date from the second column
+          if (row[1]) {
+            const parsedDate = new Date(row[1]);
+            if (!isNaN(parsedDate.getTime())) {
+              dueDate = parsedDate;
+            }
+          }
+
+          todoData.push({
+            content: row[0].toString().trim(),
+            dueDate: dueDate
+          });
+        }
+      }
+
+      if (todoData.length === 0) {
+        alert('No valid todo items found in the Excel file. Please ensure the first column contains todo content.');
+        return;
+      }
+
+      // Use bulk create function if available, otherwise create individually
+      const { contract } = await getContract();
+
+      // Prepare arrays for bulk creation
+      const contents = todoData.map(todo => todo.content);
+      const dueDates = todoData.map(todo => Math.floor(todo.dueDate.getTime() / 1000));
+
+      console.log('Importing todos:', { contents, dueDates });
+      console.log(contract);
+      
+
+      // Check if bulk create function exists
+      try {
+        const tx = await contract.bulkCreateTodos(contents, dueDates);
+        console.log('Bulk import transaction submitted:', tx.hash);
+        await tx.wait();
+        console.log('Bulk import transaction confirmed');
+
+        await loadTodos();
+        alert(`Successfully imported ${todoData.length} todos! Transaction: ${tx.hash}`);
+      } catch (bulkError) {
+        console.log('Bulk create not available, creating individually:', bulkError);
+
+        // Fallback to individual creation
+        let successCount = 0;
+        // for (const todo of todoData) {
+        //   try {
+        //     const dueTimestamp = Math.floor(todo.dueDate.getTime() / 1000);
+        //     const tx = await contract.createTodo(todo.content, dueTimestamp);
+        //     await tx.wait();
+        //     successCount++;
+        //   } catch (error) {
+        //     console.error('Error creating individual todo:', error);
+        //   }
+        // }
+
+        // await loadTodos();
+        // alert(`Successfully imported ${successCount} out of ${todoData.length} todos.`);
+      }
+
+    } catch (error) {
+      console.error('Error importing Excel file:', error);
+      alert('Error importing Excel file: ' + (error as any).message);
+    } finally {
+      setIsImporting(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const downloadTemplate = () => {
+    // Create sample data for the template
+    const templateData = [
+      ['Content', 'Due Date'],
+      ['Complete project proposal', '2025-12-31'],
+    ];
+
+    // Create a new workbook and worksheet
+    const ws = XLSX.utils.aoa_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Todo Template');
+
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 30 }, // Content column width
+      { wch: 15 }  // Due Date column width
+    ];
+
+    // Download the file
+    XLSX.writeFile(wb, 'todo_template.xlsx');
+  };
+
+  const handleSelectTodo = (todoId: number) => {
+    const newSelected = new Set(selectedTodos);
+    if (newSelected.has(todoId)) {
+      newSelected.delete(todoId);
+    } else {
+      newSelected.add(todoId);
+    }
+    setSelectedTodos(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedTodos.size === todos.length) {
+      setSelectedTodos(new Set());
+    } else {
+      setSelectedTodos(new Set(todos.map(todo => todo.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedTodos.size === 0) return;
+
+    const confirmed = window.confirm(`Are you sure you want to delete ${selectedTodos.size} todo(s)?`);
+    if (!confirmed) return;
+
+    setBulkActionLoading(true);
+    try {
+      const { contract } = await getContract();
+      const idsToDelete = Array.from(selectedTodos);
+
+      console.log('Bulk deleting todos:', idsToDelete);
+
+      const tx = await contract.bulkDeleteTodos(idsToDelete);
+      console.log('Bulk delete transaction submitted:', tx.hash);
+
+      await tx.wait();
+      console.log('Bulk delete transaction confirmed');
+
+      await loadTodos();
+      setSelectedTodos(new Set());
+      alert(`Successfully deleted ${idsToDelete.length} todos! Transaction: ${tx.hash}`);
+    } catch (error) {
+      console.error('Error bulk deleting todos:', error);
+      alert('Error deleting todos: ' + (error as any).message);
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const handleBulkToggleComplete = async (markAsCompleted: boolean) => {
+    if (selectedTodos.size === 0) return;
+
+    setBulkActionLoading(true);
+    try {
+      const { contract } = await getContract();
+      const selectedTodoObjects = todos.filter(todo => selectedTodos.has(todo.id));
+
+      const ids = selectedTodoObjects.map(todo => todo.id);
+      const contents = selectedTodoObjects.map(todo => todo.content);
+      const completed = selectedTodoObjects.map(() => markAsCompleted);
+      const dueDates = selectedTodoObjects.map(todo => todo.dueDate);
+
+      console.log('Bulk updating todos:', { ids, completed: completed });
+
+      const tx = await contract.bulkUpdateTodos(ids, contents, completed, dueDates);
+      console.log('Bulk update transaction submitted:', tx.hash);
+
+      await tx.wait();
+      console.log('Bulk update transaction confirmed');
+
+      await loadTodos();
+      setSelectedTodos(new Set());
+      alert(`Successfully ${markAsCompleted ? 'completed' : 'uncompleted'} ${ids.length} todos! Transaction: ${tx.hash}`);
+    } catch (error) {
+      console.error('Error bulk updating todos:', error);
+      alert('Error updating todos: ' + (error as any).message);
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
@@ -383,6 +587,28 @@ const TodoList: React.FC = () => {
             +
             {isLoading ? 'Adding...' : 'Add Todo'}
           </button>
+          <button
+            onClick={handleImportExcel}
+            disabled={isImporting}
+            className="px-6 py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white rounded-md font-medium transition-colors flex items-center gap-2"
+          >
+            📊
+            {isImporting ? 'Importing...' : 'Import Excel'}
+          </button>
+          <button
+            onClick={downloadTemplate}
+            className="px-4 py-2 bg-green-500 hover:bg-gray-600 text-white rounded-md font-medium transition-colors flex items-center gap-2"
+          >
+            📥
+            Download Template
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
         </div>
       </div>
 
@@ -405,6 +631,57 @@ const TodoList: React.FC = () => {
           </button>
         </div>
 
+        {todos.length > 0 && (
+          <div className="bg-white rounded-lg shadow-sm border p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-4">
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedTodos.size === todos.length && todos.length > 0}
+                    onChange={handleSelectAll}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium">
+                    {selectedTodos.size === todos.length ? 'Deselect All' : 'Select All'}
+                  </span>
+                </label>
+                {selectedTodos.size > 0 && (
+                  <span className="text-sm text-gray-600">
+                    {selectedTodos.size} selected
+                  </span>
+                )}
+              </div>
+
+              {selectedTodos.size > 0 && (
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => handleBulkToggleComplete(true)}
+                    disabled={bulkActionLoading}
+                    className="px-3 py-1 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white rounded text-sm font-medium transition-colors"
+                  >
+                    {bulkActionLoading ? '⏳' : '✓'} Complete
+                  </button>
+                  <button
+                    onClick={() => handleBulkToggleComplete(false)}
+                    disabled={bulkActionLoading}
+                    className="px-3 py-1 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-400 text-white rounded text-sm font-medium transition-colors"
+                  >
+                    {bulkActionLoading ? '⏳' : '↻'} Incomplete
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    disabled={bulkActionLoading}
+                    className="px-3 py-1 bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-white rounded text-sm font-medium transition-colors"
+                  >
+                    {bulkActionLoading ? '⏳' : '🗑️'} Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {isLoadingTodos ? (
           <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
             <p className="text-gray-500">Loading todos from blockchain...</p>
@@ -425,10 +702,16 @@ const TodoList: React.FC = () => {
                 key={todo.id}
                 className={`bg-white rounded-lg shadow-sm border p-4 transition-all ${
                   todo.completed ? 'opacity-75' : ''
-                }`}
+                } ${selectedTodos.has(todo.id) ? 'ring-2 ring-blue-500' : ''}`}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3 flex-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedTodos.has(todo.id)}
+                      onChange={() => handleSelectTodo(todo.id)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
                     <button
                       onClick={() => handleToggleTodo(todo.id)}
                       className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${

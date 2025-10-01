@@ -1,6 +1,6 @@
 import TodoListABI from './TodoListABI.json';
 
-export const CONTRACT_ADDRESS = "0x95Cba9761A3cAe8F0Ff0607CBf1cbA702e87c4f6";
+export const CONTRACT_ADDRESS = "0x93B16DeD4cA68658859354Ce117EA3ca9b87B8Ab";
 export const CONTRACT_ABI = TodoListABI;
 
 export const SEPOLIA_CHAIN_ID = 11155111;

@@ -353,5 +353,64 @@
     ],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string[]",
+        "name": "_contents",
+        "type": "string[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "_dueDates",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "bulkCreateTodos",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "_ids",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "string[]",
+        "name": "_contents",
+        "type": "string[]"
+      },
+      {
+        "internalType": "bool[]",
+        "name": "_completed",
+        "type": "bool[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "_dueDates",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "bulkUpdateTodos",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "_ids",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "bulkDeleteTodos",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
 ]
