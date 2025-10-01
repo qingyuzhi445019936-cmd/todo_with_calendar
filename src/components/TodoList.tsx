@@ -429,7 +429,6 @@ const TodoList: React.FC = () => {
         console.log('Bulk create not available, creating individually:', bulkError);
 
         // Fallback to individual creation
-        let successCount = 0;
         // for (const todo of todoData) {
         //   try {
         //     const dueTimestamp = Math.floor(todo.dueDate.getTime() / 1000);

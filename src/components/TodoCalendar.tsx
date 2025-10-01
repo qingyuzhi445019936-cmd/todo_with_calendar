@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Calendar, momentLocalizer, Event } from 'react-big-calendar';
+import { Calendar, momentLocalizer, Event, View } from 'react-big-calendar';
 import moment from 'moment';
 import { ethers } from 'ethers';
 import { Todo } from './TodoApp';
@@ -201,9 +201,8 @@ const TodoCalendar: React.FC = () => {
     setCurrentDate(newDate);
   };
 
-  const handleViewChange = (view: 'month' | 'week' | 'day' | 'agenda') => {
-    console.log('📅 Calendar: Changing view to', view);
-    setCurrentView(view);
+  const handleViewChange = (view: View) => {
+    setCurrentView(view as 'month' | 'week' | 'day' | 'agenda');
   };
 
   return (
@@ -252,6 +251,7 @@ const TodoCalendar: React.FC = () => {
           onSelectEvent={handleSelectEvent}
           onSelectSlot={handleSelectSlot}
           onNavigate={handleNavigate}
+          onView={handleViewChange}
           date={currentDate}
           view={currentView}
           selectable={true}
